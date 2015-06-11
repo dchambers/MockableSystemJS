@@ -1,3 +1,5 @@
+## Introduction
+
 MockableSystemJS allows [SystemJS](https://github.com/systemjs/systemjs) users to replace modules for the duration of a test. Assuming you've used [jspm](http://jspm.io/) to bundle your code, you will have an `index.html` file that looks something like this:
 
 ```html
@@ -10,11 +12,18 @@ MockableSystemJS allows [SystemJS](https://github.com/systemjs/systemjs) users t
 </script>
 ```
 
-Although it doesn't usually make sense to mock classes within your real app, by adding this line of code between the `system.js` and `config.js` scripts above, you would be able to start mocking:
+Although it doesn't usually make sense to mock classes within your real app, by adding this line of code:
 
 ```html
 <script src="node_modules/MockableSystemJS/dist/index.js"></script>
 ```
+
+between the `system.js` and `config.js` scripts above, you would be able to start mocking using these additional methods on `System`:
+
+  * `System.reSet()`
+  * `System.reRegister()`
+  * `System.reRegisterDynamic()`
+  * `System.restore()`
 
 ## Mocking Within Tests
 
@@ -23,32 +32,32 @@ Provided you've ensured that MockableSystemJS is loaded immediately after `syste
 ```js
 'use strict';
 
-import MockableSystem from 'MockableSystemJS';
+import chai from 'chai';
+import sinon from 'sinon';
+
+const expect = chai.expect;
+const AssortedVendableUrl = System.normalizeSync('AssortedVendable');
+const VendingMachineUrl = System.normalizeSync('VendingMachine');
 
 define('Vending Machine', function() {
-    beforeEach(function() {
-        MockableSystem.install();
-    });
-
     afterEach(function() {
-        MockableSystem.uninstall();
+        System.restore();
     });
 
-    it('always vends chocolate if that is all there is', function() {
-        System.remap('AssortedVendable').to('ChocVendable');
-        const VendingMachine = System.get(System.normalizeSync('VendingMachine')).default;
+    it("always vends chocolate if that's all there is", function() {
+        const chocStub = sinon.stub().returns('choc');
+        System.reSet(AssortedVendableUrl, System.newModule({default: chocStub}));
+        const VendingMachine = System.get(VendingMachineUrl).default;
 
         expect((new VendingMachine()).vend()).to.equal('choc');
     });
 });
 ```
 
-where `ChocVendable` is some alternate implementation of a module that you would otherwise depend on, and where `VendingMachine` is the unit under test.
-
 ## How It Works
 
 By ensuring `MockableSystemJS` is loaded immediately after `SystemJS`, it is able to replace the `System.register()` and `System.config()` methods with delegate methods that store any config and modules for future use.
 
-Later, when `MockableSystem.install()` is invoked, it causes the `System` object to be replaced with a delegate object that adds a `remap()` method, and which causes `get()` to synchronously re-load any modules that have been re-mapped, or which depend, or transitively depend, on a re-mapped module.
+Later, when the `reSet()`, `reRegister()` and `reRegisterDynamic()` methods are invoked, the new module is loaded with the corresponding original method (i.e. `set()`, `register()` and `registerDynamic()`), and any modules dependent on the new module are re-loaded so that they depend on the updated module. Here, the [sync-import](http://github.com/dchambers/sync-import) library is used to allow modules to be synchronously re-imported so that the need for complex asynchronous tests can be avoided completely.
 
-The [sync-import](http://github.com/dchambers/sync-import) library is used to allow modules to be synchronously re-imported so that the need for complex asynchronous tests can be avoided completely.
+Finally, when `System.restore()` is invoked, everything is restored back to how it originally was.
